@@ -53,6 +53,9 @@ args: [ "{{ inputs.parameters.message }}" ]
 
 The tag is substituted with the result of evaluating the tag as an expression.
 
+Note that any hyphenated parameter names or step names will cause a parsing error. You can reference them by
+indexing into the parameter or step map, e.g. `inputs.parameters['my-param']` or `steps['my-step'].outputs.result`.
+
 [Learn about the expression syntax](https://github.com/antonmedv/expr/blob/master/docs/Language-Definition.md).
 
 #### Examples
@@ -80,13 +83,13 @@ We provide some core functions:
 Cast to int:
 
 ```
-asInt(inputs.parameters["my-int-param"])
+asInt(inputs.parameters['my-int-param'])
 ```
 
 Cast to float:
 
 ```
-asFloat(inputs.parameters["my-float-param"])
+asFloat(inputs.parameters['my-float-param'])
 ```
 
 Cast to string:
@@ -101,12 +104,18 @@ Convert to a JSON string (needed for `withParam`):
 toJson([1, 2])
 ```
 
+Extract data from JSON:
+
+```
+jsonpath(inputs.parameters.json, '$.some.path')
+```
+
 You can also use [Sprig functions](http://masterminds.github.io/sprig/):
 
 Trim a string:
 
 ```
-sprig.trim(inputs.parameters["my-string-param"])
+sprig.trim(inputs.parameters['my-string-param'])
 ```
 
 !!! Warning In Sprig functions, errors are not often not raised. E.g. if `int` is used on an invalid value, it
@@ -152,6 +161,18 @@ returns `0`. Please review the Sprig documentation to understand which functions
 | `tasks.<TASKNAME>.outputs.parameters.<NAME>` | Output parameter of any previous task. When the previous task uses 'withItems' or 'withParams', this contains a JSON array of the output parameter values of each invocation |
 | `tasks.<TASKNAME>.outputs.artifacts.<NAME>` | Output artifact of any previous task |
 
+### RetryStrategy
+
+When using the `when` field within `retryStrategy`, special variables are available.
+
+| Variable | Description|
+|----------|------------|
+| `lastRetry.exitCode` | Exit code of the last retry |
+| `lastRetry.Status` | Status of the last retry |
+| `lastRetry.Duration` | Duration in seconds of the last retry |
+
+Note: These variables evaluate to a string type. If using advanced expressions, either cast them to int values (`when: "{{=asInt(lastRetry.exitCode) >= 2}}"`) or compare them to string values (`when: "{{=lastRetry.exitCode != '2'}}"`).
+
 ### Container/Script Templates
 
 | Variable | Description|
@@ -182,8 +203,7 @@ step.
 | `inputs.parameters.<NAME>` | Input parameter of the metric-emitting template |
 | `outputs.parameters.<NAME>` | Output parameter of the metric-emitting template |
 | `outputs.result` | Output result of the metric-emitting template |
-| `resourcesDuration.{cpu,memory}` | Resources duration **in
-seconds**. Must be one of `resourcesDuration.cpu` or `resourcesDuration.memory`, if available. For more info, see the [Resource Duration](resource-duration.md) doc.|
+| `resourcesDuration.{cpu,memory}` | Resources duration **in seconds**. Must be one of `resourcesDuration.cpu` or `resourcesDuration.memory`, if available. For more info, see the [Resource Duration](resource-duration.md) doc.|
 
 ### Realtime Metrics
 

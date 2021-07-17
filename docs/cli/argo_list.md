@@ -20,11 +20,11 @@ argo list [flags]
   -h, --help                    help for list
       --no-headers              Don't print headers (default print headers).
       --older string            List completed workflows finished before the specified duration (e.g. 10m, 3h, 1d)
-  -o, --output string           Output format. One of: wide|name
+  -o, --output string           Output format. One of: name|wide|yaml|json
       --prefix string           Filter workflows by prefix
       --resubmitted             Show resubmitted workflows
       --running                 Show running workflows. Mutually exclusive with --completed.
-  -l, --selector string         Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)
+  -l, --selector string         Selector (label query) to filter on, not including uninitialized ones, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)
       --since string            Show only workflows created after than a relative duration
       --status strings          Filter by status (comma separated)
 ```

@@ -22,6 +22,7 @@ nav:
   - Overview: README.md
   - core-concepts.md
   - quick-start.md
+  - training.md
   - User Guide:
       # topics are ones that can be done using the UI only
       - Beginner:
@@ -123,6 +124,7 @@ nav:
           - argo watch: cli/argo_watch.md
   - Operator Manual:
       - installation.md
+      - upgrading.md
       - releases.md
       - Configuration:
           - managed-namespace.md
@@ -131,6 +133,7 @@ nav:
           - workflow-executors.md
           - sidecar-injection.md
           - default-workflow-specs.md
+          - template-defaults.md
           - offloading-large-workflows.md
           - workflow-archive.md
           - metrics.md
@@ -156,6 +159,7 @@ nav:
       - static-code-analysis.md
       - stress-testing.md
       - releasing.md
+  - FAQ: faq.md
   - Releases ⧉: https://github.com/argoproj/argo-workflows/releases
   - Roadmap: roadmap.md
   - Blog ⧉: https://blog.argoproj.io/

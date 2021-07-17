@@ -120,6 +120,27 @@ message ArtifactPaths {
   optional Artifact artifact = 1;
 }
 
+// ArtifactRepository represents an artifact repository in which a controller will store its artifacts
+message ArtifactRepository {
+  // ArchiveLogs enables log archiving
+  optional bool archiveLogs = 1;
+
+  // S3 stores artifact in a S3-compliant object store
+  optional S3ArtifactRepository s3 = 2;
+
+  // Artifactory stores artifacts to JFrog Artifactory
+  optional ArtifactoryArtifactRepository artifactory = 3;
+
+  // HDFS stores artifacts in HDFS
+  optional HDFSArtifactRepository hdfs = 4;
+
+  // OSS stores artifact in a OSS-compliant object store
+  optional OSSArtifactRepository oss = 5;
+
+  // GCS stores artifact in a GCS object store
+  optional GCSArtifactRepository gcs = 6;
+}
+
 // +protobuf.options.(gogoproto.goproto_stringer)=false
 message ArtifactRepositoryRef {
   // The name of the config map. Defaults to "artifact-repositories".
@@ -138,6 +159,9 @@ message ArtifactRepositoryRefStatus {
 
   // If this ref represents the default artifact repository, rather than a config map.
   optional bool default = 3;
+
+  // The repository the workflow will use. This maybe empty before v3.1.
+  optional ArtifactRepository artifactRepository = 4;
 }
 
 // ArtifactoryArtifact is the location of an artifactory artifact
@@ -146,6 +170,14 @@ message ArtifactoryArtifact {
   optional string url = 1;
 
   optional ArtifactoryAuth artifactoryAuth = 2;
+}
+
+// ArtifactoryArtifactRepository defines the controller configuration for an artifactory artifact repository
+message ArtifactoryArtifactRepository {
+  optional ArtifactoryAuth artifactoryAuth = 1;
+
+  // RepoURL is the url for artifactory repo.
+  optional string repoURL = 2;
 }
 
 // ArtifactoryAuth describes the secret selectors required for authenticating to artifactory
@@ -341,10 +373,15 @@ message DAGTask {
   // OnExit is a template reference which is invoked at the end of the
   // template, irrespective of the success, failure, or error of the
   // primary template.
+  // DEPRECATED: Use Hooks[exit].Template instead.
   optional string onExit = 11;
 
   // Depends are name of other targets which this depends on
   optional string depends = 12;
+
+  // Hooks hold the lifecycle hook which is invoked at lifecycle of
+  // task, irrespective of the success, failure, or error status of the primary task
+  map<string, LifecycleHook> hooks = 13;
 }
 
 // DAGTemplate is a template subtype for directed acyclic graph templates
@@ -400,6 +437,14 @@ message GCSArtifact {
   optional string key = 2;
 }
 
+// GCSArtifactRepository defines the controller configuration for a GCS artifact repository
+message GCSArtifactRepository {
+  optional GCSBucket gCSBucket = 1;
+
+  // KeyFormat is defines the format of how to store keys. Can reference workflow variables
+  optional string keyFormat = 2;
+}
+
 // GCSBucket contains the access information for interfacring with a GCS bucket
 message GCSBucket {
   // Bucket is the name of the bucket
@@ -444,6 +489,9 @@ message GitArtifact {
 
   // InsecureIgnoreHostKey disables SSH strict host key checking during git clone
   optional bool insecureIgnoreHostKey = 8;
+
+  // DisableSubmodules disables submodules during git clone
+  optional bool disableSubmodules = 9;
 }
 
 // HDFSArtifact is the location of an HDFS artifact
@@ -452,6 +500,17 @@ message HDFSArtifact {
 
   // Path is a file path in HDFS
   optional string path = 2;
+
+  // Force copies a file forcibly even if it exists (default: false)
+  optional bool force = 3;
+}
+
+// HDFSArtifactRepository defines the controller configuration for an HDFS artifact repository
+message HDFSArtifactRepository {
+  optional HDFSConfig hDFSConfig = 1;
+
+  // PathFormat is defines the format of path to store a file. Can reference workflow variables
+  optional string pathFormat = 2;
 
   // Force copies a file forcibly even if it exists (default: false)
   optional bool force = 3;
@@ -496,6 +555,23 @@ message HDFSKrbConfig {
   optional string krbServicePrincipalName = 6;
 }
 
+message HTTP {
+  // Method is HTTP methods for HTTP Request
+  optional string method = 1;
+
+  // URL of the HTTP Request
+  optional string url = 2;
+
+  // Headers are an optional list of headers to send with HTTP requests
+  repeated HTTPHeader headers = 3;
+
+  // TimeoutSeconds is request timeout for HTTP Request. Default is 30 seconds
+  optional int64 timeoutSeconds = 4;
+
+  // Body is content of the HTTP Request
+  optional bytes body = 5;
+}
+
 // HTTPArtifact allows an file served on HTTP to be placed as an input artifact in a container
 message HTTPArtifact {
   // URL of the artifact
@@ -503,6 +579,18 @@ message HTTPArtifact {
 
   // Headers are an optional list of headers to send with HTTP requests for artifacts
   repeated Header headers = 2;
+}
+
+message HTTPHeader {
+  optional string name = 1;
+
+  optional string value = 2;
+
+  optional HTTPHeaderSource valueFrom = 3;
+}
+
+message HTTPHeaderSource {
+  optional k8s.io.api.core.v1.SecretKeySelector secretKeyRef = 1;
 }
 
 // Header indicate a key-value request header to be used when fetching artifacts over HTTP
@@ -543,6 +631,12 @@ message Inputs {
 // +kubebuilder:validation:Type=object
 message Item {
   optional bytes value = 1;
+}
+
+message LifecycleHook {
+  optional string template = 1;
+
+  optional Arguments arguments = 2;
 }
 
 // A link to another app.
@@ -635,6 +729,14 @@ message MutexStatus {
   // Waiting is a list of mutexes and their respective objects this workflow is waiting for.
   // +listType=atomic
   repeated MutexHolding waiting = 2;
+}
+
+message NodeResult {
+  optional string phase = 1;
+
+  optional string message = 2;
+
+  optional Outputs outputs = 3;
 }
 
 // NodeStatus contains status information about an individual node in the workflow
@@ -747,6 +849,14 @@ message OSSArtifact {
   optional string key = 2;
 }
 
+// OSSArtifactRepository defines the controller configuration for an OSS artifact repository
+message OSSArtifactRepository {
+  optional OSSBucket oSSBucket = 1;
+
+  // KeyFormat is defines the format of how to store keys. Can reference workflow variables
+  optional string keyFormat = 2;
+}
+
 // OSSBucket contains the access information required for interfacing with an Alibaba Cloud OSS bucket
 message OSSBucket {
   // Endpoint is the hostname of the bucket endpoint
@@ -766,6 +876,18 @@ message OSSBucket {
 
   // SecurityToken is the user's temporary security token. For more details, check out: https://www.alibabacloud.com/help/doc-detail/100624.htm
   optional string securityToken = 6;
+
+  // LifecycleRule specifies how to manage bucket's lifecycle
+  optional OSSLifecycleRule lifecycleRule = 7;
+}
+
+// OSSLifecycleRule specifies how to manage bucket's lifecycle
+message OSSLifecycleRule {
+  // MarkInfrequentAccessAfterDays is the number of days before we convert the objects in the bucket to Infrequent Access (IA) storage type
+  optional int32 markInfrequentAccessAfterDays = 1;
+
+  // MarkDeletionAfterDays is the number of days before we delete objects in the bucket
+  optional int32 markDeletionAfterDays = 2;
 }
 
 // Outputs hold parameters, artifacts, and results from a step
@@ -909,6 +1031,10 @@ message RetryStrategy {
 
   // Affinity prevents running workflow's step on the same host
   optional RetryAffinity affinity = 4;
+
+  // Expression is a condition expression for when a node will be retried. If it evaluates to false, the node will not
+  // be retried and the retry strategy will be ignored/
+  optional string expression = 5;
 }
 
 // S3Artifact is the location of an S3 artifact
@@ -917,6 +1043,18 @@ message S3Artifact {
 
   // Key is the key in the bucket where the artifact resides
   optional string key = 2;
+}
+
+// S3ArtifactRepository defines the controller configuration for an S3 artifact repository
+message S3ArtifactRepository {
+  optional S3Bucket s3Bucket = 1;
+
+  // KeyFormat is defines the format of how to store keys. Can reference workflow variables
+  optional string keyFormat = 2;
+
+  // KeyPrefix is prefix used as part of the bucket key in which the controller will store artifacts.
+  // DEPRECATED. Use KeyFormat instead
+  optional string keyPrefix = 3;
 }
 
 // S3Bucket contains the access information required for interfacing with an S3 bucket
@@ -1089,6 +1227,12 @@ message TarStrategy {
   optional int32 compressionLevel = 1;
 }
 
+message Task {
+  optional string nodeId = 1;
+
+  optional Template template = 2;
+}
+
 // Template is a reusable and composable unit of execution in a workflow
 message Template {
   // Name is the name of the template
@@ -1137,6 +1281,9 @@ message Template {
 
   // Data is a data template
   optional Data data = 39;
+
+  // HTTP makes a HTTP request
+  optional HTTP http = 42;
 
   // Volumes is a list of volumes that can be mounted by containers in a template.
   // +patchStrategy=merge
@@ -1614,7 +1761,38 @@ message WorkflowStep {
   // OnExit is a template reference which is invoked at the end of the
   // template, irrespective of the success, failure, or error of the
   // primary template.
+  // DEPRECATED: Use Hooks[exit].Template instead.
   optional string onExit = 11;
+
+  // Hooks holds the lifecycle hook which is invoked at lifecycle of
+  // step, irrespective of the success, failure, or error status of the primary step
+  map<string, LifecycleHook> hooks = 12;
+}
+
+// +genclient
+// +kubebuilder:subresource:status
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+message WorkflowTaskSet {
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
+
+  optional WorkflowTaskSetSpec spec = 2;
+
+  optional WorkflowTaskSetStatus status = 3;
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+message WorkflowTaskSetList {
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
+
+  repeated WorkflowTaskSet items = 2;
+}
+
+message WorkflowTaskSetSpec {
+  repeated Task tasks = 1;
+}
+
+message WorkflowTaskSetStatus {
+  map<string, NodeResult> nodes = 1;
 }
 
 // WorkflowTemplate is the definition of a workflow template resource

@@ -2,12 +2,13 @@ package main
 
 import (
 	"io/ioutil"
+	"path/filepath"
 
 	"sigs.k8s.io/yaml"
 )
 
 func cleanCRD(filename string) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := ioutil.ReadFile(filepath.Clean(filename))
 	if err != nil {
 		panic(err)
 	}
@@ -36,6 +37,8 @@ func cleanCRD(filename string) {
 		properties.(obj)["script"].(obj)["required"] = []string{"image", "source"}
 	case "workfloweventbindings.argoproj.io":
 		// noop
+	case "workflowtasksets.argoproj.io":
+		// noop
 	default:
 		panic(name)
 	}
@@ -50,7 +53,7 @@ func cleanCRD(filename string) {
 }
 
 func removeCRDValidation(filename string) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := ioutil.ReadFile(filepath.Clean(filename))
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +68,7 @@ func removeCRDValidation(filename string) {
 	properties := version["schema"].(obj)["openAPIV3Schema"].(obj)["properties"].(obj)
 	for k := range properties {
 		if k == "spec" || k == "status" {
-			properties[k] = obj{"type": "object", "x-kubernetes-preserve-unknown-fields": true}
+			properties[k] = obj{"type": "object", "x-kubernetes-preserve-unknown-fields": true, "x-kubernetes-map-type": "atomic"}
 		}
 	}
 	data, err = yaml.Marshal(crd)

@@ -13,7 +13,7 @@
   "info": {
     "description": "You can get examples of requests and responses by using the CLI with `--gloglevel=9`, e.g. `argo list --gloglevel=9`",
     "title": "Argo Server API",
-    "version": "latest"
+    "version": "VERSION"
   },
   "paths": {
     "/api/v1/archived-workflows": {
@@ -2204,6 +2204,11 @@
             "description": "The continue option should be set when retrieving more results from the server. Since this value is\nserver defined, clients may only use the continue value from a previous query result with identical\nquery parameters (except for the value of continue) and the server may reject a continue value it\ndoes not recognize. If the specified continue value is no longer valid whether due to expiration\n(generally five to fifteen minutes) or a configuration change on the server, the server will\nrespond with a 410 ResourceExpired error together with a continue token. If the client needs a\nconsistent list, it must restart their list without the continue field. Otherwise, the client may\nsend another list request with the token received with the 410 error, the server will respond with\na list starting from the next key, but from the latest snapshot, which is inconsistent from the\nprevious list results - objects that are created, modified, or deleted after the first list request\nwill be included in the response, as long as their keys are after the \"next key\".\n\nThis field is not supported when watch is true. Clients may start a watch from the last\nresourceVersion value returned by the server and not miss any modifications.",
             "name": "listOptions.continue",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "name": "fields",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2966,6 +2971,11 @@
             "description": "insecureSkipTLSVerifyBackend indicates that the apiserver should not confirm the validity of the\nserving certificate of the backend it is connecting to.  This will make the HTTPS connection between the apiserver\nand the backend insecure. This means the apiserver cannot verify the log data it is receiving came from the real\nkubelet.  If the kubelet is configured to verify the apiserver's TLS credentials, it does not mean the\nconnection to the real kubelet is vulnerable to a man in the middle attack (e.g. an attacker could not intercept\nthe actual log data coming from the real kubelet).\n+optional.",
             "name": "logOptions.insecureSkipTLSVerifyBackend",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "name": "grep",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3390,6 +3400,11 @@
             "type": "boolean",
             "description": "insecureSkipTLSVerifyBackend indicates that the apiserver should not confirm the validity of the\nserving certificate of the backend it is connecting to.  This will make the HTTPS connection between the apiserver\nand the backend insecure. This means the apiserver cannot verify the log data it is receiving came from the real\nkubelet.  If the kubelet is configured to verify the apiserver's TLS credentials, it does not mean the\nconnection to the real kubelet is vulnerable to a man in the middle attack (e.g. an attacker could not intercept\nthe actual log data coming from the real kubelet).\n+optional.",
             "name": "logOptions.insecureSkipTLSVerifyBackend",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "name": "grep",
             "in": "query"
           }
         ],
@@ -6264,6 +6279,36 @@
         }
       }
     },
+    "io.argoproj.workflow.v1alpha1.ArtifactRepository": {
+      "description": "ArtifactRepository represents an artifact repository in which a controller will store its artifacts",
+      "type": "object",
+      "properties": {
+        "archiveLogs": {
+          "description": "ArchiveLogs enables log archiving",
+          "type": "boolean"
+        },
+        "artifactory": {
+          "description": "Artifactory stores artifacts to JFrog Artifactory",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.ArtifactoryArtifactRepository"
+        },
+        "gcs": {
+          "description": "GCS stores artifact in a GCS object store",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.GCSArtifactRepository"
+        },
+        "hdfs": {
+          "description": "HDFS stores artifacts in HDFS",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.HDFSArtifactRepository"
+        },
+        "oss": {
+          "description": "OSS stores artifact in a OSS-compliant object store",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.OSSArtifactRepository"
+        },
+        "s3": {
+          "description": "S3 stores artifact in a S3-compliant object store",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.S3ArtifactRepository"
+        }
+      }
+    },
     "io.argoproj.workflow.v1alpha1.ArtifactRepositoryRef": {
       "type": "object",
       "properties": {
@@ -6280,6 +6325,10 @@
     "io.argoproj.workflow.v1alpha1.ArtifactRepositoryRefStatus": {
       "type": "object",
       "properties": {
+        "artifactRepository": {
+          "description": "The repository the workflow will use. This maybe empty before v3.1.",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.ArtifactRepository"
+        },
         "configMap": {
           "description": "The name of the config map. Defaults to \"artifact-repositories\".",
           "type": "string"
@@ -6311,6 +6360,24 @@
         },
         "url": {
           "description": "URL of the artifact",
+          "type": "string"
+        },
+        "usernameSecret": {
+          "description": "UsernameSecret is the secret selector to the repository username",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.ArtifactoryArtifactRepository": {
+      "description": "ArtifactoryArtifactRepository defines the controller configuration for an artifactory artifact repository",
+      "type": "object",
+      "properties": {
+        "passwordSecret": {
+          "description": "PasswordSecret is the secret selector to the repository password",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "repoURL": {
+          "description": "RepoURL is the url for artifactory repo.",
           "type": "string"
         },
         "usernameSecret": {
@@ -6840,12 +6907,19 @@
           "description": "Depends are name of other targets which this depends on",
           "type": "string"
         },
+        "hooks": {
+          "description": "Hooks hold the lifecycle hook which is invoked at lifecycle of task, irrespective of the success, failure, or error status of the primary task",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.LifecycleHook"
+          }
+        },
         "name": {
           "description": "Name is the name of the target",
           "type": "string"
         },
         "onExit": {
-          "description": "OnExit is a template reference which is invoked at the end of the template, irrespective of the success, failure, or error of the primary template.",
+          "description": "OnExit is a template reference which is invoked at the end of the template, irrespective of the success, failure, or error of the primary template. DEPRECATED: Use Hooks[exit].Template instead.",
           "type": "string"
         },
         "template": {
@@ -6980,6 +7054,24 @@
         }
       }
     },
+    "io.argoproj.workflow.v1alpha1.GCSArtifactRepository": {
+      "description": "GCSArtifactRepository defines the controller configuration for a GCS artifact repository",
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "description": "Bucket is the name of the bucket",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "KeyFormat is defines the format of how to store keys. Can reference workflow variables",
+          "type": "string"
+        },
+        "serviceAccountKeySecret": {
+          "description": "ServiceAccountKeySecret is the secret selector to the bucket's service account key",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        }
+      }
+    },
     "io.argoproj.workflow.v1alpha1.Gauge": {
       "description": "Gauge is a Gauge prometheus metric",
       "type": "object",
@@ -7034,6 +7126,10 @@
         "depth": {
           "description": "Depth specifies clones/fetches should be shallow and include the given number of commits from the branch tip",
           "type": "integer"
+        },
+        "disableSubmodules": {
+          "description": "DisableSubmodules disables submodules during git clone",
+          "type": "boolean"
         },
         "fetch": {
           "description": "Fetch specifies a number of refs that should be fetched before checkout",
@@ -7120,6 +7216,87 @@
         }
       }
     },
+    "io.argoproj.workflow.v1alpha1.HDFSArtifactRepository": {
+      "description": "HDFSArtifactRepository defines the controller configuration for an HDFS artifact repository",
+      "type": "object",
+      "properties": {
+        "addresses": {
+          "description": "Addresses is accessible addresses of HDFS name nodes",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "force": {
+          "description": "Force copies a file forcibly even if it exists (default: false)",
+          "type": "boolean"
+        },
+        "hdfsUser": {
+          "description": "HDFSUser is the user to access HDFS file system. It is ignored if either ccache or keytab is used.",
+          "type": "string"
+        },
+        "krbCCacheSecret": {
+          "description": "KrbCCacheSecret is the secret selector for Kerberos ccache Either ccache or keytab can be set to use Kerberos.",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "krbConfigConfigMap": {
+          "description": "KrbConfig is the configmap selector for Kerberos config as string It must be set if either ccache or keytab is used.",
+          "$ref": "#/definitions/io.k8s.api.core.v1.ConfigMapKeySelector"
+        },
+        "krbKeytabSecret": {
+          "description": "KrbKeytabSecret is the secret selector for Kerberos keytab Either ccache or keytab can be set to use Kerberos.",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "krbRealm": {
+          "description": "KrbRealm is the Kerberos realm used with Kerberos keytab It must be set if keytab is used.",
+          "type": "string"
+        },
+        "krbServicePrincipalName": {
+          "description": "KrbServicePrincipalName is the principal name of Kerberos service It must be set if either ccache or keytab is used.",
+          "type": "string"
+        },
+        "krbUsername": {
+          "description": "KrbUsername is the Kerberos username used with Kerberos keytab It must be set if keytab is used.",
+          "type": "string"
+        },
+        "pathFormat": {
+          "description": "PathFormat is defines the format of path to store a file. Can reference workflow variables",
+          "type": "string"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.HTTP": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "body": {
+          "description": "Body is content of the HTTP Request",
+          "type": "string",
+          "format": "byte"
+        },
+        "headers": {
+          "description": "Headers are an optional list of headers to send with HTTP requests",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.HTTPHeader"
+          }
+        },
+        "method": {
+          "description": "Method is HTTP methods for HTTP Request",
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "description": "TimeoutSeconds is request timeout for HTTP Request. Default is 30 seconds",
+          "type": "integer"
+        },
+        "url": {
+          "description": "URL of the HTTP Request",
+          "type": "string"
+        }
+      }
+    },
     "io.argoproj.workflow.v1alpha1.HTTPArtifact": {
       "description": "HTTPArtifact allows an file served on HTTP to be placed as an input artifact in a container",
       "type": "object",
@@ -7137,6 +7314,31 @@
         "url": {
           "description": "URL of the artifact",
           "type": "string"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.HTTPHeader": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "valueFrom": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.HTTPHeaderSource"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.HTTPHeaderSource": {
+      "type": "object",
+      "properties": {
+        "secretKeyRef": {
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
         }
       }
     },
@@ -7219,6 +7421,20 @@
     },
     "io.argoproj.workflow.v1alpha1.Item": {
       "description": "Item expands a single workflow step into multiple parallel steps The value of Item can be a map, string, bool, or number"
+    },
+    "io.argoproj.workflow.v1alpha1.LifecycleHook": {
+      "type": "object",
+      "required": [
+        "template"
+      ],
+      "properties": {
+        "arguments": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.Arguments"
+        },
+        "template": {
+          "type": "string"
+        }
+      }
     },
     "io.argoproj.workflow.v1alpha1.Link": {
       "description": "A link to another app.",
@@ -7409,6 +7625,20 @@
         }
       }
     },
+    "io.argoproj.workflow.v1alpha1.NodeResult": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "outputs": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.Outputs"
+        },
+        "phase": {
+          "type": "string"
+        }
+      }
+    },
     "io.argoproj.workflow.v1alpha1.NodeStatus": {
       "description": "NodeStatus contains status information about an individual node in the workflow",
       "type": "object",
@@ -7567,6 +7797,10 @@
           "description": "Key is the path in the bucket where the artifact resides",
           "type": "string"
         },
+        "lifecycleRule": {
+          "description": "LifecycleRule specifies how to manage bucket's lifecycle",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.OSSLifecycleRule"
+        },
         "secretKeySecret": {
           "description": "SecretKeySecret is the secret selector to the bucket's secret key",
           "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
@@ -7574,6 +7808,58 @@
         "securityToken": {
           "description": "SecurityToken is the user's temporary security token. For more details, check out: https://www.alibabacloud.com/help/doc-detail/100624.htm",
           "type": "string"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.OSSArtifactRepository": {
+      "description": "OSSArtifactRepository defines the controller configuration for an OSS artifact repository",
+      "type": "object",
+      "properties": {
+        "accessKeySecret": {
+          "description": "AccessKeySecret is the secret selector to the bucket's access key",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "bucket": {
+          "description": "Bucket is the name of the bucket",
+          "type": "string"
+        },
+        "createBucketIfNotPresent": {
+          "description": "CreateBucketIfNotPresent tells the driver to attempt to create the OSS bucket for output artifacts, if it doesn't exist",
+          "type": "boolean"
+        },
+        "endpoint": {
+          "description": "Endpoint is the hostname of the bucket endpoint",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "KeyFormat is defines the format of how to store keys. Can reference workflow variables",
+          "type": "string"
+        },
+        "lifecycleRule": {
+          "description": "LifecycleRule specifies how to manage bucket's lifecycle",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.OSSLifecycleRule"
+        },
+        "secretKeySecret": {
+          "description": "SecretKeySecret is the secret selector to the bucket's secret key",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "securityToken": {
+          "description": "SecurityToken is the user's temporary security token. For more details, check out: https://www.alibabacloud.com/help/doc-detail/100624.htm",
+          "type": "string"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.OSSLifecycleRule": {
+      "description": "OSSLifecycleRule specifies how to manage bucket's lifecycle",
+      "type": "object",
+      "properties": {
+        "markDeletionAfterDays": {
+          "description": "MarkDeletionAfterDays is the number of days before we delete objects in the bucket",
+          "type": "integer"
+        },
+        "markInfrequentAccessAfterDays": {
+          "description": "MarkInfrequentAccessAfterDays is the number of days before we convert the objects in the bucket to Infrequent Access (IA) storage type",
+          "type": "integer"
         }
       }
     },
@@ -7784,6 +8070,10 @@
           "description": "Backoff is a backoff strategy",
           "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.Backoff"
         },
+        "expression": {
+          "description": "Expression is a condition expression for when a node will be retried. If it evaluates to false, the node will not be retried and the retry strategy will be ignored/",
+          "type": "string"
+        },
         "limit": {
           "description": "Limit is the maximum number of attempts when retrying a container",
           "$ref": "#/definitions/io.k8s.apimachinery.pkg.util.intstr.IntOrString"
@@ -7820,6 +8110,56 @@
         },
         "key": {
           "description": "Key is the key in the bucket where the artifact resides",
+          "type": "string"
+        },
+        "region": {
+          "description": "Region contains the optional bucket region",
+          "type": "string"
+        },
+        "roleARN": {
+          "description": "RoleARN is the Amazon Resource Name (ARN) of the role to assume.",
+          "type": "string"
+        },
+        "secretKeySecret": {
+          "description": "SecretKeySecret is the secret selector to the bucket's secret key",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "useSDKCreds": {
+          "description": "UseSDKCreds tells the driver to figure out credentials based on sdk defaults.",
+          "type": "boolean"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.S3ArtifactRepository": {
+      "description": "S3ArtifactRepository defines the controller configuration for an S3 artifact repository",
+      "type": "object",
+      "properties": {
+        "accessKeySecret": {
+          "description": "AccessKeySecret is the secret selector to the bucket's access key",
+          "$ref": "#/definitions/io.k8s.api.core.v1.SecretKeySelector"
+        },
+        "bucket": {
+          "description": "Bucket is the name of the bucket",
+          "type": "string"
+        },
+        "createBucketIfNotPresent": {
+          "description": "CreateBucketIfNotPresent tells the driver to attempt to create the S3 bucket for output artifacts, if it doesn't exist",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.CreateS3BucketOptions"
+        },
+        "endpoint": {
+          "description": "Endpoint is the hostname of the bucket endpoint",
+          "type": "string"
+        },
+        "insecure": {
+          "description": "Insecure will connect to the service with TLS",
+          "type": "boolean"
+        },
+        "keyFormat": {
+          "description": "KeyFormat is defines the format of how to store keys. Can reference workflow variables",
+          "type": "string"
+        },
+        "keyPrefix": {
+          "description": "KeyPrefix is prefix used as part of the bucket key in which the controller will store artifacts. DEPRECATED. Use KeyFormat instead",
           "type": "string"
         },
         "region": {
@@ -8187,6 +8527,21 @@
         }
       }
     },
+    "io.argoproj.workflow.v1alpha1.Task": {
+      "type": "object",
+      "required": [
+        "nodeId",
+        "template"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "template": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.Template"
+        }
+      }
+    },
     "io.argoproj.workflow.v1alpha1.Template": {
       "description": "Template is a reusable and composable unit of execution in a workflow",
       "type": "object",
@@ -8243,6 +8598,10 @@
           },
           "x-kubernetes-patch-merge-key": "ip",
           "x-kubernetes-patch-strategy": "merge"
+        },
+        "http": {
+          "description": "HTTP makes a HTTP request",
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.HTTP"
         },
         "initContainers": {
           "description": "InitContainers is a list of containers which run before the main container.",
@@ -9155,12 +9514,19 @@
           "description": "ContinueOn makes argo to proceed with the following step even if this step fails. Errors and Failed states can be specified",
           "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.ContinueOn"
         },
+        "hooks": {
+          "description": "Hooks holds the lifecycle hook which is invoked at lifecycle of step, irrespective of the success, failure, or error status of the primary step",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.LifecycleHook"
+          }
+        },
         "name": {
           "description": "Name of the step",
           "type": "string"
         },
         "onExit": {
-          "description": "OnExit is a template reference which is invoked at the end of the template, irrespective of the success, failure, or error of the primary template.",
+          "description": "OnExit is a template reference which is invoked at the end of the template, irrespective of the success, failure, or error of the primary template. DEPRECATED: Use Hooks[exit].Template instead.",
           "type": "string"
         },
         "template": {
@@ -9234,6 +9600,54 @@
         },
         "namespace": {
           "type": "string"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.WorkflowTaskSet": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "spec"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.io.k8s.community/contributors/devel/sig-architecture/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.io.k8s.community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.WorkflowTaskSetSpec"
+        },
+        "status": {
+          "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.WorkflowTaskSetStatus"
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.WorkflowTaskSetSpec": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.Task"
+          }
+        }
+      }
+    },
+    "io.argoproj.workflow.v1alpha1.WorkflowTaskSetStatus": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/io.argoproj.workflow.v1alpha1.NodeResult"
+          }
         }
       }
     },

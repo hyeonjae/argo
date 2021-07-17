@@ -65,12 +65,16 @@ export class WorkflowsList extends BasePage<RouteComponentProps<any>, State> {
 
     private get filterParams() {
         const params = new URLSearchParams();
-        this.state.selectedPhases.forEach(phase => {
-            params.append('phase', phase);
-        });
-        this.state.selectedLabels.forEach(label => {
-            params.append('label', label);
-        });
+        if (this.state.selectedPhases) {
+            this.state.selectedPhases.forEach(phase => {
+                params.append('phase', phase);
+            });
+        }
+        if (this.state.selectedLabels) {
+            this.state.selectedLabels.forEach(label => {
+                params.append('label', label);
+            });
+        }
         if (this.state.pagination.offset) {
             params.append('offset', this.state.pagination.offset);
         }
@@ -107,7 +111,7 @@ export class WorkflowsList extends BasePage<RouteComponentProps<any>, State> {
                 offset: this.queryParam('offset'),
                 limit: parseLimit(this.queryParam('limit')) || savedOptions.paginationLimit || 500
             },
-            namespace: this.props.match.params.namespace || '',
+            namespace: Utils.getNamespace(this.props.match.params.namespace) || '',
             selectedPhases: phaseQueryParam.length > 0 ? (phaseQueryParam as WorkflowPhase[]) : savedOptions.selectedPhases,
             selectedLabels: labelQueryParam.length > 0 ? (labelQueryParam as string[]) : savedOptions.selectedLabels,
             selectedWorkflows: new Map<string, models.Workflow>(),
@@ -179,7 +183,7 @@ export class WorkflowsList extends BasePage<RouteComponentProps<any>, State> {
                         <SlidingPanel isShown={!!this.sidePanel} onClose={() => ctx.navigation.goto('.', {sidePanel: null})}>
                             {this.sidePanel === 'submit-new-workflow' && (
                                 <WorkflowCreator
-                                    namespace={Utils.getNamespace(this.state.namespace)}
+                                    namespace={Utils.getNamespaceWithDefault(this.state.namespace)}
                                     onCreate={wf => ctx.navigation.goto(uiUrl(`workflows/${wf.metadata.namespace}/${wf.metadata.name}`))}
                                 />
                             )}
@@ -223,7 +227,8 @@ export class WorkflowsList extends BasePage<RouteComponentProps<any>, State> {
 
     private saveHistory() {
         this.storage.setItem('options', this.options, {} as WorkflowListRenderOptions);
-        this.url = uiUrl('workflows/' + this.state.namespace || '' + '?' + this.filterParams.toString());
+        const newNamespace = Utils.managedNamespace ? '' : this.state.namespace;
+        this.url = uiUrl('workflows' + (newNamespace ? '/' + newNamespace : '') + '?' + this.filterParams.toString());
         Utils.currentNamespace = this.state.namespace;
     }
 
@@ -262,7 +267,31 @@ export class WorkflowsList extends BasePage<RouteComponentProps<any>, State> {
                         )}
                         <div className='argo-table-list'>
                             <div className='row argo-table-list__head'>
-                                <div className='columns small-1 workflows-list__status' />
+                                <div className='columns small-1 workflows-list__status'>
+                                    <input
+                                        type='checkbox'
+                                        className='workflows-list__status--checkbox'
+                                        checked={this.state.workflows.length === this.state.selectedWorkflows.size}
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                        }}
+                                        onChange={e => {
+                                            if (this.state.workflows.length === this.state.selectedWorkflows.size) {
+                                                // All workflows are selected, deselect them all
+                                                this.updateCurrentlySelectedAndBatchActions(new Map<string, models.Workflow>());
+                                            } else {
+                                                // Not all workflows are selected, select them all
+                                                const currentlySelected: Map<string, Workflow> = this.state.selectedWorkflows;
+                                                this.state.workflows.forEach(wf => {
+                                                    if (!currentlySelected.has(wf.metadata.uid)) {
+                                                        currentlySelected.set(wf.metadata.uid, wf);
+                                                    }
+                                                });
+                                                this.updateCurrentlySelectedAndBatchActions(currentlySelected);
+                                            }
+                                        }}
+                                    />
+                                </div>
                                 <div className='row small-11'>
                                     <div className='columns small-3'>NAME</div>
                                     <div className='columns small-1'>NAMESPACE</div>

@@ -49,7 +49,7 @@ export const WorkflowCreator = ({namespace, onCreate}: {namespace: string; onCre
                         }
                     });
                 } else {
-                    setWorkflow(exampleWorkflow(Utils.getNamespace(namespace)));
+                    setWorkflow(exampleWorkflow(Utils.getNamespaceWithDefault(namespace)));
                 }
                 break;
         }
@@ -90,8 +90,8 @@ export const WorkflowCreator = ({namespace, onCreate}: {namespace: string; onCre
                         namespace={workflowTemplate.metadata.namespace}
                         name={workflowTemplate.metadata.name}
                         entrypoint={workflowTemplate.spec.entrypoint}
-                        entrypoints={(workflowTemplate.spec.templates || []).map(t => t.name)}
-                        parameters={workflowTemplate.spec.arguments.parameters || []}
+                        templates={workflowTemplate.spec.templates || []}
+                        workflowParameters={workflowTemplate.spec.arguments.parameters || []}
                     />
                     <a onClick={() => setStage('full-editor')}>
                         Edit using full workflow options <i className='fa fa-caret-right' />
@@ -106,7 +106,7 @@ export const WorkflowCreator = ({namespace, onCreate}: {namespace: string; onCre
                             icon='plus'
                             onClick={() => {
                                 services.workflows
-                                    .create(workflow, Utils.getNamespace(workflow.metadata.namespace))
+                                    .create(workflow, Utils.getNamespaceWithDefault(workflow.metadata.namespace))
                                     .then(onCreate)
                                     .catch(setError);
                             }}>

@@ -4,6 +4,9 @@
 
 > v2.5 and after
 
+!!! Warning "HTTP vs HTTPS"
+    Since v3.0 the Argo Server listens for HTTPS requests, rather than HTTP.
+
 The Argo Server is a server that exposes an API and UI for workflows. You'll need to use this if you want to [offload large workflows](offloading-large-workflows.md) or the [workflow archive](workflow-archive.md).
 
 You can run this in either "hosted" or "local" mode.
@@ -32,7 +35,8 @@ To run locally:
 argo server
 ```
 
-This will start a server on port 2746 which you can view at [http://localhost:2746](http://localhost:2746).
+This will start a server on port 2746 which you can view at [https://localhost:2746](https://localhost:2746).
+
 
 ## Options
 
@@ -71,7 +75,7 @@ following:
 kubectl -n argo port-forward svc/argo-server 2746:2746
 ```
 
-Then visit: http://127.0.0.1:2746
+Then visit: https://127.0.0.1:2746
 
 
 ### Expose a `LoadBalancer`
@@ -127,6 +131,11 @@ spec:
 
 Create a ingress, with the annotation `ingress.kubernetes.io/rewrite-target: /`:
 
+>If TLS is enabled (default in v3.0 and after), the ingress controller must be told
+>that the backend uses HTTPS. The method depends on the ingress controller, e.g.
+>Traefik expects an `ingress.kubernetes.io/protocol` annotation, while ingress-nginx
+>uses `nginx.ingress.kubernetes.io/backend-protocol`
+
 ```yaml
 apiVersion: networking.k8s.io/v1beta1
 kind: Ingress
@@ -134,6 +143,8 @@ metadata:
   name: argo-server
   annotations:
     ingress.kubernetes.io/rewrite-target: /$2
+    ingress.kubernetes.io/protocol: https # Traefik
+    nginx.ingress.kubernetes.io/backend-protocol: https # ingress-nginx
 spec:
   rules:
     - http:

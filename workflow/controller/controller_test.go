@@ -20,7 +20,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/yaml"
 
 	"github.com/argoproj/argo-workflows/v3/config"
 	"github.com/argoproj/argo-workflows/v3/persist/sqldb"
@@ -28,7 +27,6 @@ import (
 	fakewfclientset "github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned/fake"
 	"github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned/scheme"
 	wfextv "github.com/argoproj/argo-workflows/v3/pkg/client/informers/externalversions"
-	"github.com/argoproj/argo-workflows/v3/test"
 	armocks "github.com/argoproj/argo-workflows/v3/workflow/artifactrepositories/mocks"
 	"github.com/argoproj/argo-workflows/v3/workflow/common"
 	controllercache "github.com/argoproj/argo-workflows/v3/workflow/controller/cache"
@@ -94,7 +92,6 @@ metadata:
 spec:
   entrypoint: whalesay
   serviceAccountName: whalesay
-  ttlSecondsAfterFinished: 7
   ttlStrategy:
     secondsAfterCompletion: 5
   templates:
@@ -156,8 +153,8 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 				},
 			},
 		},
-		artifactRepositories: armocks.DummyArtifactRepositories(&config.ArtifactRepository{
-			S3: &config.S3ArtifactRepository{
+		artifactRepositories: armocks.DummyArtifactRepositories(&wfv1.ArtifactRepository{
+			S3: &wfv1.S3ArtifactRepository{
 				S3Bucket: wfv1.S3Bucket{Endpoint: "my-endpoint", Bucket: "my-bucket"},
 			},
 		}),
@@ -168,7 +165,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		wfArchive:            sqldb.NullWorkflowArchive,
 		hydrator:             hydratorfake.Noop,
 		estimatorFactory:     estimation.DummyEstimatorFactory,
-		eventRecorderManager: &testEventRecorderManager{eventRecorder: record.NewFakeRecorder(16)},
+		eventRecorderManager: &testEventRecorderManager{eventRecorder: record.NewFakeRecorder(64)},
 		archiveLabelSelector: labels.Everything(),
 		cacheFactory:         controllercache.NewCacheFactory(kube, "default"),
 	}
@@ -188,6 +185,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		wfc.throttler = wfc.newThrottler()
 		wfc.podQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 		wfc.podCleanupQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+		wfc.rateLimiter = wfc.newRateLimiter()
 	}
 
 	// always compare to WorkflowController.Run to see what this block of code should be doing
@@ -241,24 +239,9 @@ func newControllerWithComplexDefaults() (context.CancelFunc, *WorkflowController
 	return cancel, controller
 }
 
-func unmarshalWF(yamlStr string) *wfv1.Workflow {
-	return test.LoadWorkflowFromBytes([]byte(yamlStr))
-}
-
-func unmarshalWFTmpl(yamlStr string) *wfv1.WorkflowTemplate {
-	return test.LoadWorkflowTemplateFromBytes([]byte(yamlStr))
-}
-
-func unmarshalCWFTmpl(yamlStr string) *wfv1.ClusterWorkflowTemplate {
-	return test.LoadClusterWorkflowTemplateFromBytes([]byte(yamlStr))
-}
-
 func unmarshalArtifact(yamlStr string) *wfv1.Artifact {
 	var artifact wfv1.Artifact
-	err := yaml.Unmarshal([]byte(yamlStr), &artifact)
-	if err != nil {
-		panic(err)
-	}
+	wfv1.MustUnmarshal([]byte(yamlStr), &artifact)
 	return &artifact
 }
 
@@ -326,6 +309,21 @@ func createRunningPods(ctx context.Context, woc *wfOperationCtx) {
 	}
 }
 
+func syncPodsInformer(ctx context.Context, woc *wfOperationCtx, podObjs ...apiv1.Pod) {
+	podcs := woc.controller.kubeclientset.CoreV1().Pods(woc.wf.GetNamespace())
+	pods, err := podcs.List(ctx, metav1.ListOptions{})
+	if err != nil {
+		panic(err)
+	}
+	podObjs = append(podObjs, pods.Items...)
+	for _, pod := range podObjs {
+		err = woc.controller.podInformer.GetIndexer().Add(&pod)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
 // makePodsPhase acts like a pod controller and simulates the transition of pods transitioning into a specified state
 func makePodsPhase(ctx context.Context, woc *wfOperationCtx, phase apiv1.PodPhase, with ...with) {
 	podcs := woc.controller.kubeclientset.CoreV1().Pods(woc.wf.GetNamespace())
@@ -373,19 +371,19 @@ func TestAddingWorkflowDefaultValueIfValueNotExist(t *testing.T) {
 	t.Run("WithoutDefaults", func(t *testing.T) {
 		cancel, controller := newController()
 		defer cancel()
-		workflow := unmarshalWF(helloWorldWf)
+		workflow := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 		err := controller.setWorkflowDefaults(workflow)
 		assert.NoError(t, err)
-		assert.Equal(t, workflow, unmarshalWF(helloWorldWf))
+		assert.Equal(t, workflow, wfv1.MustUnmarshalWorkflow(helloWorldWf))
 	})
 	t.Run("WithDefaults", func(t *testing.T) {
 		cancel, controller := newControllerWithDefaults()
 		defer cancel()
-		defaultWorkflowSpec := unmarshalWF(helloWorldWf)
+		defaultWorkflowSpec := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 		err := controller.setWorkflowDefaults(defaultWorkflowSpec)
 		assert.NoError(t, err)
 		assert.Equal(t, defaultWorkflowSpec.Spec.HostNetwork, &ans)
-		assert.NotEqual(t, defaultWorkflowSpec, unmarshalWF(helloWorldWf))
+		assert.NotEqual(t, defaultWorkflowSpec, wfv1.MustUnmarshalWorkflow(helloWorldWf))
 		assert.Equal(t, *defaultWorkflowSpec.Spec.HostNetwork, true)
 	})
 }
@@ -393,14 +391,14 @@ func TestAddingWorkflowDefaultValueIfValueNotExist(t *testing.T) {
 func TestAddingWorkflowDefaultComplex(t *testing.T) {
 	cancel, controller := newControllerWithComplexDefaults()
 	defer cancel()
-	workflow := unmarshalWF(testDefaultWf)
+	workflow := wfv1.MustUnmarshalWorkflow(testDefaultWf)
 	var ten int32 = 10
 	assert.Equal(t, workflow.Spec.Entrypoint, "whalesay")
 	assert.Nil(t, workflow.Spec.TTLStrategy)
 	assert.Contains(t, workflow.Labels, "foo")
 	err := controller.setWorkflowDefaults(workflow)
 	assert.NoError(t, err)
-	assert.NotEqual(t, workflow, unmarshalWF(testDefaultWf))
+	assert.NotEqual(t, workflow, wfv1.MustUnmarshalWorkflow(testDefaultWf))
 	assert.Equal(t, workflow.Spec.Entrypoint, "whalesay")
 	assert.Equal(t, workflow.Spec.ServiceAccountName, "whalesay")
 	assert.Equal(t, *workflow.Spec.TTLStrategy.SecondsAfterFailure, ten)
@@ -412,12 +410,12 @@ func TestAddingWorkflowDefaultComplex(t *testing.T) {
 func TestAddingWorkflowDefaultComplexTwo(t *testing.T) {
 	cancel, controller := newControllerWithComplexDefaults()
 	defer cancel()
-	workflow := unmarshalWF(testDefaultWfTTL)
+	workflow := wfv1.MustUnmarshalWorkflow(testDefaultWfTTL)
 	var ten int32 = 10
 	var five int32 = 5
 	err := controller.setWorkflowDefaults(workflow)
 	assert.NoError(t, err)
-	assert.NotEqual(t, workflow, unmarshalWF(testDefaultWfTTL))
+	assert.NotEqual(t, workflow, wfv1.MustUnmarshalWorkflow(testDefaultWfTTL))
 	assert.Equal(t, workflow.Spec.Entrypoint, "whalesay")
 	assert.Equal(t, workflow.Spec.ServiceAccountName, "whalesay")
 	assert.Equal(t, *workflow.Spec.TTLStrategy.SecondsAfterCompletion, five)
@@ -462,8 +460,17 @@ func TestClusterController(t *testing.T) {
 }
 
 func TestParallelism(t *testing.T) {
-	cancel, controller := newController(
-		unmarshalWF(`
+	for tt, f := range map[string]func(controller *WorkflowController){
+		"Parallelism": func(x *WorkflowController) {
+			x.Config.Parallelism = 1
+		},
+		"NamespaceParallelism": func(x *WorkflowController) {
+			x.Config.NamespaceParallelism = 1
+		},
+	} {
+		t.Run(tt, func(t *testing.T) {
+			cancel, controller := newController(
+				wfv1.MustUnmarshalWorkflow(`
 metadata:
   name: my-wf-0
 spec:
@@ -473,7 +480,7 @@ spec:
       container:
         image: my-image
 `),
-		unmarshalWF(`
+				wfv1.MustUnmarshalWorkflow(`
 metadata:
   name: my-wf-1
 spec:
@@ -483,23 +490,26 @@ spec:
       container:
         image: my-image
 `),
-		func(controller *WorkflowController) { controller.Config.Parallelism = 1 },
-	)
-	defer cancel()
-	ctx := context.Background()
-	assert.True(t, controller.processNextItem(ctx))
-	assert.True(t, controller.processNextItem(ctx))
+				f,
+			)
+			defer cancel()
+			ctx := context.Background()
+			assert.True(t, controller.processNextItem(ctx))
+			assert.True(t, controller.processNextItem(ctx))
 
-	expectWorkflow(ctx, controller, "my-wf-0", func(wf *wfv1.Workflow) {
-		if assert.NotNil(t, wf) {
-			assert.Equal(t, wfv1.WorkflowRunning, wf.Status.Phase)
-		}
-	})
-	expectWorkflow(ctx, controller, "my-wf-1", func(wf *wfv1.Workflow) {
-		if assert.NotNil(t, wf) {
-			assert.Empty(t, wf.Status.Phase)
-		}
-	})
+			expectWorkflow(ctx, controller, "my-wf-0", func(wf *wfv1.Workflow) {
+				if assert.NotNil(t, wf) {
+					assert.Equal(t, wfv1.WorkflowRunning, wf.Status.Phase)
+				}
+			})
+			expectWorkflow(ctx, controller, "my-wf-1", func(wf *wfv1.Workflow) {
+				if assert.NotNil(t, wf) {
+					assert.Equal(t, wfv1.WorkflowPending, wf.Status.Phase)
+					assert.Equal(t, "Workflow processing has been postponed because too many workflows are already running", wf.Status.Message)
+				}
+			})
+		})
+	}
 }
 
 func TestWorkflowController_archivedWorkflowGarbageCollector(t *testing.T) {
@@ -549,8 +559,8 @@ spec:
 `
 
 func TestCheckAndInitWorkflowTmplRef(t *testing.T) {
-	wf := unmarshalWF(wfWithTmplRef)
-	wftmpl := unmarshalWFTmpl(wfTmpl)
+	wf := wfv1.MustUnmarshalWorkflow(wfWithTmplRef)
+	wftmpl := wfv1.MustUnmarshalWorkflowTemplate(wfTmpl)
 	cancel, controller := newController(wf, wftmpl)
 	defer cancel()
 	woc := newWorkflowOperationCtx(wf, controller)
@@ -566,7 +576,7 @@ func TestIsArchivable(t *testing.T) {
 	lblSelector.MatchLabels = make(map[string]string)
 	lblSelector.MatchLabels["workflows.argoproj.io/archive-strategy"] = "true"
 
-	workflow := unmarshalWF(helloWorldWf)
+	workflow := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	t.Run("EverythingSelector", func(t *testing.T) {
 		controller.archiveLabelSelector = labels.Everything()
 		assert.True(t, controller.isArchivable(workflow))
@@ -625,7 +635,7 @@ spec:
 
 func TestNotifySemaphoreConfigUpdate(t *testing.T) {
 	assert := assert.New(t)
-	wf := unmarshalWF(wfWithSema)
+	wf := wfv1.MustUnmarshalWorkflow(wfWithSema)
 	wf1 := wf.DeepCopy()
 	wf1.Name = "one"
 	wf2 := wf.DeepCopy()

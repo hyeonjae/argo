@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/yaml"
 
 	"github.com/argoproj/argo-workflows/v3/config"
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
@@ -22,20 +20,16 @@ import (
 	"github.com/argoproj/argo-workflows/v3/workflow/common"
 )
 
+// Deprecated
 func unmarshalTemplate(yamlStr string) *wfv1.Template {
-	var tmpl wfv1.Template
-	err := yaml.Unmarshal([]byte(yamlStr), &tmpl)
-	if err != nil {
-		panic(err)
-	}
-	return &tmpl
+	return wfv1.MustUnmarshalTemplate(yamlStr)
 }
 
 // newWoc a new operation context suitable for testing
 func newWoc(wfs ...wfv1.Workflow) *wfOperationCtx {
 	var wf *wfv1.Workflow
 	if len(wfs) == 0 {
-		wf = unmarshalWF(helloWorldWf)
+		wf = wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	} else {
 		wf = &wfs[0]
 	}
@@ -149,7 +143,7 @@ func TestScriptTemplateWithoutVolumeOptionalArtifact(t *testing.T) {
 	// Ensure that volume mount is added to initContainer when artifact is provided
 	// and the volume is mounted manually in the template
 	tmpl = unmarshalTemplate(scriptTemplateWithOptionalInputArtifactProvidedAndOverlappedPath)
-	wf := unmarshalWF(helloWorldWf)
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	wf.Spec.Volumes = append(wf.Spec.Volumes, apiv1.Volume{Name: "my-mount"})
 	woc = newWoc(*wf)
 	mainCtr = tmpl.Script.Container
@@ -272,8 +266,8 @@ func TestWFLevelExecutorServiceAccountName(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	assert.Equal(t, "exec-sa-token", pod.Spec.Volumes[2].Name)
-	assert.Equal(t, "foo-token", pod.Spec.Volumes[2].VolumeSource.Secret.SecretName)
+	assert.Equal(t, "exec-sa-token", pod.Spec.Volumes[1].Name)
+	assert.Equal(t, "foo-token", pod.Spec.Volumes[1].VolumeSource.Secret.SecretName)
 
 	waitCtr := pod.Spec.Containers[0]
 	verifyServiceAccountTokenVolumeMount(t, waitCtr, "exec-sa-token", "/var/run/secrets/kubernetes.io/serviceaccount")
@@ -299,8 +293,8 @@ func TestTmplLevelExecutorServiceAccountName(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	assert.Equal(t, "exec-sa-token", pod.Spec.Volumes[2].Name)
-	assert.Equal(t, "tmpl-token", pod.Spec.Volumes[2].VolumeSource.Secret.SecretName)
+	assert.Equal(t, "exec-sa-token", pod.Spec.Volumes[1].Name)
+	assert.Equal(t, "tmpl-token", pod.Spec.Volumes[1].VolumeSource.Secret.SecretName)
 
 	waitCtr := pod.Spec.Containers[0]
 	verifyServiceAccountTokenVolumeMount(t, waitCtr, "exec-sa-token", "/var/run/secrets/kubernetes.io/serviceaccount")
@@ -444,7 +438,7 @@ func TestMetadata(t *testing.T) {
 func TestWorkflowControllerArchiveConfig(t *testing.T) {
 	ctx := context.Background()
 	woc := newWoc()
-	setArtifactRepository(woc.controller, &config.ArtifactRepository{S3: &config.S3ArtifactRepository{
+	setArtifactRepository(woc.controller, &wfv1.ArtifactRepository{S3: &wfv1.S3ArtifactRepository{
 		S3Bucket: wfv1.S3Bucket{
 			Bucket: "foo",
 		},
@@ -456,41 +450,15 @@ func TestWorkflowControllerArchiveConfig(t *testing.T) {
 	assert.Len(t, pods.Items, 1)
 }
 
-func setArtifactRepository(controller *WorkflowController, repo *config.ArtifactRepository) {
+func setArtifactRepository(controller *WorkflowController, repo *wfv1.ArtifactRepository) {
 	controller.artifactRepositories = armocks.DummyArtifactRepositories(repo)
-}
-
-// TestWorkflowControllerArchiveConfigUnresolvable verifies workflow fails when archive location has
-// unresolvable variables
-func TestWorkflowControllerArchiveConfigUnresolvable(t *testing.T) {
-	wf := unmarshalWF(helloWorldWf)
-	wf.Spec.Templates[0].Outputs = wfv1.Outputs{
-		Artifacts: []wfv1.Artifact{
-			{
-				Name: "foo",
-				Path: "/tmp/file",
-			},
-		},
-	}
-	woc := newWoc(*wf)
-	ctx := context.Background()
-	setArtifactRepository(woc.controller, &config.ArtifactRepository{S3: &config.S3ArtifactRepository{
-		S3Bucket: wfv1.S3Bucket{
-			Bucket: "foo",
-		},
-		KeyFormat: "{{workflow.unresolvable}}",
-	}})
-	woc.operate(ctx)
-	pods, err := listPods(woc)
-	assert.NoError(t, err)
-	assert.Len(t, pods.Items, 0)
 }
 
 // TestConditionalNoAddArchiveLocation verifies we do not add archive location if it is not needed
 func TestConditionalNoAddArchiveLocation(t *testing.T) {
 	ctx := context.Background()
 	woc := newWoc()
-	setArtifactRepository(woc.controller, &config.ArtifactRepository{S3: &config.S3ArtifactRepository{
+	setArtifactRepository(woc.controller, &wfv1.ArtifactRepository{S3: &wfv1.S3ArtifactRepository{
 		S3Bucket: wfv1.S3Bucket{
 			Bucket: "foo",
 		},
@@ -501,8 +469,7 @@ func TestConditionalNoAddArchiveLocation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	var tmpl wfv1.Template
-	err = json.Unmarshal([]byte(pod.Annotations[common.AnnotationKeyTemplate]), &tmpl)
+	tmpl, err := getPodTemplate(&pod)
 	assert.NoError(t, err)
 	assert.Nil(t, tmpl.ArchiveLocation)
 }
@@ -511,8 +478,8 @@ func TestConditionalNoAddArchiveLocation(t *testing.T) {
 func TestConditionalAddArchiveLocationArchiveLogs(t *testing.T) {
 	ctx := context.Background()
 	woc := newWoc()
-	setArtifactRepository(woc.controller, &config.ArtifactRepository{
-		S3: &config.S3ArtifactRepository{
+	setArtifactRepository(woc.controller, &wfv1.ArtifactRepository{
+		S3: &wfv1.S3ArtifactRepository{
 			S3Bucket: wfv1.S3Bucket{
 				Bucket: "foo",
 			},
@@ -526,8 +493,7 @@ func TestConditionalAddArchiveLocationArchiveLogs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	var tmpl wfv1.Template
-	err = json.Unmarshal([]byte(pod.Annotations[common.AnnotationKeyTemplate]), &tmpl)
+	tmpl, err := getPodTemplate(&pod)
 	assert.NoError(t, err)
 	assert.NotNil(t, tmpl.ArchiveLocation)
 }
@@ -535,7 +501,7 @@ func TestConditionalAddArchiveLocationArchiveLogs(t *testing.T) {
 // TestConditionalNoAddArchiveLocation verifies we add archive location when it is needed
 func TestConditionalArchiveLocation(t *testing.T) {
 	ctx := context.Background()
-	wf := unmarshalWF(helloWorldWf)
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	wf.Spec.Templates[0].Outputs = wfv1.Outputs{
 		Artifacts: []wfv1.Artifact{
 			{
@@ -545,7 +511,7 @@ func TestConditionalArchiveLocation(t *testing.T) {
 		},
 	}
 	woc := newWoc()
-	setArtifactRepository(woc.controller, &config.ArtifactRepository{S3: &config.S3ArtifactRepository{
+	setArtifactRepository(woc.controller, &wfv1.ArtifactRepository{S3: &wfv1.S3ArtifactRepository{
 		S3Bucket: wfv1.S3Bucket{
 			Bucket: "foo",
 		},
@@ -556,10 +522,35 @@ func TestConditionalArchiveLocation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	var tmpl wfv1.Template
-	err = json.Unmarshal([]byte(pod.Annotations[common.AnnotationKeyTemplate]), &tmpl)
+	tmpl, err := getPodTemplate(&pod)
 	assert.NoError(t, err)
 	assert.Nil(t, tmpl.ArchiveLocation)
+}
+
+func Test_createWorkflowPod_rateLimited(t *testing.T) {
+	for limit, limited := range map[config.ResourceRateLimit]bool{
+		{Limit: 0, Burst: 0}: true,
+		{Limit: 1, Burst: 1}: false,
+		{Limit: 0, Burst: 1}: false,
+		{Limit: 1, Burst: 1}: false,
+	} {
+		t.Run(fmt.Sprintf("%v", limit), func(t *testing.T) {
+			wf := wfv1.MustUnmarshalWorkflow(helloWorldWf)
+			cancel, controller := newController(wf, func(c *WorkflowController) {
+				c.Config.ResourceRateLimit = &limit
+			})
+			defer cancel()
+			woc := newWorkflowOperationCtx(wf, controller)
+			woc.operate(context.Background())
+			x := woc.wf.Status.Nodes[woc.wf.Name]
+			assert.Equal(t, wfv1.NodePending, x.Phase)
+			if limited {
+				assert.Equal(t, "resource creation rate-limit reached", x.Message)
+			} else {
+				assert.Empty(t, x.Message)
+			}
+		})
+	}
 }
 
 func Test_createWorkflowPod_emissary(t *testing.T) {
@@ -629,10 +620,9 @@ func TestVolumeAndVolumeMounts(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		assert.Equal(t, 3, len(pod.Spec.Volumes))
-		assert.Equal(t, "podmetadata", pod.Spec.Volumes[0].Name)
-		assert.Equal(t, "docker-sock", pod.Spec.Volumes[1].Name)
-		assert.Equal(t, "volume-name", pod.Spec.Volumes[2].Name)
+		assert.Equal(t, 2, len(pod.Spec.Volumes))
+		assert.Equal(t, "docker-sock", pod.Spec.Volumes[0].Name)
+		assert.Equal(t, "volume-name", pod.Spec.Volumes[1].Name)
 		assert.Equal(t, 1, len(pod.Spec.Containers[1].VolumeMounts))
 		assert.Equal(t, "volume-name", pod.Spec.Containers[1].VolumeMounts[0].Name)
 	})
@@ -653,9 +643,8 @@ func TestVolumeAndVolumeMounts(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		assert.Equal(t, 2, len(pod.Spec.Volumes))
-		assert.Equal(t, "podmetadata", pod.Spec.Volumes[0].Name)
-		assert.Equal(t, "volume-name", pod.Spec.Volumes[1].Name)
+		assert.Equal(t, 1, len(pod.Spec.Volumes))
+		assert.Equal(t, "volume-name", pod.Spec.Volumes[0].Name)
 		assert.Equal(t, 1, len(pod.Spec.Containers[1].VolumeMounts))
 		assert.Equal(t, "volume-name", pod.Spec.Containers[1].VolumeMounts[0].Name)
 	})
@@ -676,9 +665,8 @@ func TestVolumeAndVolumeMounts(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		assert.Equal(t, 2, len(pod.Spec.Volumes))
-		assert.Equal(t, "podmetadata", pod.Spec.Volumes[0].Name)
-		assert.Equal(t, "volume-name", pod.Spec.Volumes[1].Name)
+		assert.Equal(t, 1, len(pod.Spec.Volumes))
+		assert.Equal(t, "volume-name", pod.Spec.Volumes[0].Name)
 		assert.Equal(t, 1, len(pod.Spec.Containers[1].VolumeMounts))
 		assert.Equal(t, "volume-name", pod.Spec.Containers[1].VolumeMounts[0].Name)
 	})
@@ -699,25 +687,22 @@ func TestVolumeAndVolumeMounts(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		if assert.Len(t, pod.Spec.Volumes, 3) {
-			assert.Equal(t, "podmetadata", pod.Spec.Volumes[0].Name)
-			assert.Equal(t, "var-run-argo", pod.Spec.Volumes[1].Name)
-			assert.Equal(t, "volume-name", pod.Spec.Volumes[2].Name)
+		if assert.Len(t, pod.Spec.Volumes, 2) {
+			assert.Equal(t, "var-run-argo", pod.Spec.Volumes[0].Name)
+			assert.Equal(t, "volume-name", pod.Spec.Volumes[1].Name)
 		}
 		if assert.Len(t, pod.Spec.InitContainers, 1) {
 			init := pod.Spec.InitContainers[0]
-			if assert.Len(t, init.VolumeMounts, 2) {
-				assert.Equal(t, "podmetadata", init.VolumeMounts[0].Name)
-				assert.Equal(t, "var-run-argo", init.VolumeMounts[1].Name)
+			if assert.Len(t, init.VolumeMounts, 1) {
+				assert.Equal(t, "var-run-argo", init.VolumeMounts[0].Name)
 			}
 		}
 		containers := pod.Spec.Containers
 		if assert.Len(t, containers, 2) {
 			wait := containers[0]
-			if assert.Len(t, wait.VolumeMounts, 3) {
-				assert.Equal(t, "podmetadata", wait.VolumeMounts[0].Name)
-				assert.Equal(t, "volume-name", wait.VolumeMounts[1].Name)
-				assert.Equal(t, "var-run-argo", wait.VolumeMounts[2].Name)
+			if assert.Len(t, wait.VolumeMounts, 2) {
+				assert.Equal(t, "volume-name", wait.VolumeMounts[0].Name)
+				assert.Equal(t, "var-run-argo", wait.VolumeMounts[1].Name)
 			}
 			main := containers[1]
 			assert.Equal(t, []string{"/var/run/argo/argoexec", "emissary", "--", "cowsay"}, main.Command)
@@ -768,9 +753,9 @@ func TestVolumesPodSubstitution(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pods.Items, 1)
 	pod := pods.Items[0]
-	assert.Equal(t, 3, len(pod.Spec.Volumes))
-	assert.Equal(t, "volume-name", pod.Spec.Volumes[2].Name)
-	assert.Equal(t, "test-name", pod.Spec.Volumes[2].PersistentVolumeClaim.ClaimName)
+	assert.Equal(t, 2, len(pod.Spec.Volumes))
+	assert.Equal(t, "volume-name", pod.Spec.Volumes[1].Name)
+	assert.Equal(t, "test-name", pod.Spec.Volumes[1].PersistentVolumeClaim.ClaimName)
 	assert.Equal(t, 1, len(pod.Spec.Containers[1].VolumeMounts))
 	assert.Equal(t, "volume-name", pod.Spec.Containers[1].VolumeMounts[0].Name)
 }
@@ -806,8 +791,8 @@ func TestOutOfCluster(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		assert.Equal(t, "kubeconfig", pod.Spec.Volumes[1].Name)
-		assert.Equal(t, "foo", pod.Spec.Volumes[1].VolumeSource.Secret.SecretName)
+		assert.Equal(t, "kubeconfig", pod.Spec.Volumes[0].Name)
+		assert.Equal(t, "foo", pod.Spec.Volumes[0].VolumeSource.Secret.SecretName)
 
 		waitCtr := pod.Spec.Containers[0]
 		verifyKubeConfigVolume(waitCtr, "kubeconfig", "/kube/config")
@@ -832,8 +817,8 @@ func TestOutOfCluster(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, pods.Items, 1)
 		pod := pods.Items[0]
-		assert.Equal(t, "kube-config-secret", pod.Spec.Volumes[1].Name)
-		assert.Equal(t, "foo", pod.Spec.Volumes[1].VolumeSource.Secret.SecretName)
+		assert.Equal(t, "kube-config-secret", pod.Spec.Volumes[0].Name)
+		assert.Equal(t, "foo", pod.Spec.Volumes[0].VolumeSource.Secret.SecretName)
 
 		// kubeconfig volume is the last one
 		waitCtr := pod.Spec.Containers[0]
@@ -1201,20 +1186,20 @@ spec:
 `
 
 func TestPodSpecPatch(t *testing.T) {
-	wf := unmarshalWF(helloWorldWfWithPatch)
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWfWithPatch)
 	ctx := context.Background()
 	woc := newWoc(*wf)
 	mainCtr := woc.execWf.Spec.Templates[0].Container
 	pod, _ := woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
 	assert.Equal(t, "0.800", pod.Spec.Containers[1].Resources.Limits.Cpu().AsDec().String())
 
-	wf = unmarshalWF(helloWorldWfWithWFPatch)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWfWithWFPatch)
 	woc = newWoc(*wf)
 	mainCtr = woc.execWf.Spec.Templates[0].Container
 	pod, _ = woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
 	assert.Equal(t, "0.800", pod.Spec.Containers[1].Resources.Limits.Cpu().AsDec().String())
 
-	wf = unmarshalWF(helloWorldWfWithWFYAMLPatch)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWfWithWFYAMLPatch)
 	woc = newWoc(*wf)
 	mainCtr = woc.execWf.Spec.Templates[0].Container
 	pod, _ = woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
@@ -1222,7 +1207,7 @@ func TestPodSpecPatch(t *testing.T) {
 	assert.Equal(t, "0.800", pod.Spec.Containers[1].Resources.Limits.Cpu().AsDec().String())
 	assert.Equal(t, "104857600", pod.Spec.Containers[1].Resources.Limits.Memory().AsDec().String())
 
-	wf = unmarshalWF(helloWorldWfWithInvalidPatchFormat)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWfWithInvalidPatchFormat)
 	woc = newWoc(*wf)
 	mainCtr = woc.execWf.Spec.Templates[0].Container
 	_, err := woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
@@ -1241,7 +1226,7 @@ func TestMainContainerCustomization(t *testing.T) {
 	}
 	// podSpecPatch in workflow spec takes precedence over the main container's
 	// configuration in controller so here we respect what's specified in podSpecPatch.
-	wf := unmarshalWF(helloWorldWfWithPatch)
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWfWithPatch)
 	woc := newWoc(*wf)
 	ctx := context.Background()
 	woc.controller.Config.MainContainer = mainCtrSpec
@@ -1251,7 +1236,7 @@ func TestMainContainerCustomization(t *testing.T) {
 
 	// The main container's resources should be changed since the existing
 	// container's resources are not specified.
-	wf = unmarshalWF(helloWorldWf)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	woc = newWoc(*wf)
 	woc.controller.Config.MainContainer = mainCtrSpec
 	mainCtr = woc.execWf.Spec.Templates[0].Container
@@ -1261,7 +1246,7 @@ func TestMainContainerCustomization(t *testing.T) {
 
 	// Workflow spec's main container takes precedence over config in controller
 	// so here the main container resources remain unchanged.
-	wf = unmarshalWF(helloWorldWf)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	woc = newWoc(*wf)
 	woc.controller.Config.MainContainer = mainCtrSpec
 	mainCtr = woc.execWf.Spec.Templates[0].Container
@@ -1277,7 +1262,7 @@ func TestMainContainerCustomization(t *testing.T) {
 
 	// If the name of the container in the workflow spec is not "main",
 	// the main container resources should remain unchanged.
-	wf = unmarshalWF(helloWorldWf)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	woc = newWoc(*wf)
 	mainCtr = woc.execWf.Spec.Templates[0].Container
 	mainCtr.Resources = apiv1.ResourceRequirements{
@@ -1298,7 +1283,7 @@ func TestMainContainerCustomization(t *testing.T) {
 }
 
 func TestIsResourcesSpecified(t *testing.T) {
-	wf := unmarshalWF(helloWorldWf)
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWf)
 	woc := newWoc(*wf)
 	mainCtr := woc.execWf.Spec.Templates[0].Container
 	mainCtr.Resources = apiv1.ResourceRequirements{Limits: apiv1.ResourceList{}}
@@ -1348,27 +1333,27 @@ spec:
 `
 
 func TestHybridWfVolumesWindows(t *testing.T) {
-	wf := unmarshalWF(helloWindowsWf)
+	wf := wfv1.MustUnmarshalWorkflow(helloWindowsWf)
 	woc := newWoc(*wf)
 
 	ctx := context.Background()
 	mainCtr := woc.execWf.Spec.Templates[0].Container
 	pod, _ := woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
-	assert.Equal(t, "\\\\.\\pipe\\docker_engine", pod.Spec.Containers[0].VolumeMounts[1].MountPath)
-	assert.Equal(t, false, pod.Spec.Containers[0].VolumeMounts[1].ReadOnly)
-	assert.Equal(t, (*apiv1.HostPathType)(nil), pod.Spec.Volumes[1].HostPath.Type)
+	assert.Equal(t, "\\\\.\\pipe\\docker_engine", pod.Spec.Containers[0].VolumeMounts[0].MountPath)
+	assert.Equal(t, false, pod.Spec.Containers[0].VolumeMounts[0].ReadOnly)
+	assert.Equal(t, (*apiv1.HostPathType)(nil), pod.Spec.Volumes[0].HostPath.Type)
 }
 
 func TestHybridWfVolumesLinux(t *testing.T) {
-	wf := unmarshalWF(helloLinuxWf)
+	wf := wfv1.MustUnmarshalWorkflow(helloLinuxWf)
 	woc := newWoc(*wf)
 
 	ctx := context.Background()
 	mainCtr := woc.execWf.Spec.Templates[0].Container
 	pod, _ := woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
-	assert.Equal(t, "/var/run/docker.sock", pod.Spec.Containers[0].VolumeMounts[1].MountPath)
-	assert.Equal(t, true, pod.Spec.Containers[0].VolumeMounts[1].ReadOnly)
-	assert.Equal(t, &hostPathSocket, pod.Spec.Volumes[1].HostPath.Type)
+	assert.Equal(t, "/var/run/docker.sock", pod.Spec.Containers[0].VolumeMounts[0].MountPath)
+	assert.Equal(t, true, pod.Spec.Containers[0].VolumeMounts[0].ReadOnly)
+	assert.Equal(t, &hostPathSocket, pod.Spec.Volumes[0].HostPath.Type)
 }
 
 var propagateMaxDuration = `
@@ -1390,14 +1375,13 @@ func TestPropagateMaxDuration(t *testing.T) {
 	// Ensure that volume mount is added when artifact is provided
 	tmpl := unmarshalTemplate(propagateMaxDuration)
 	woc := newWoc()
-	deadline := time.Now()
+	deadline := time.Time{}.Add(time.Second)
 	ctx := context.Background()
 	pod, err := woc.createWorkflowPod(ctx, tmpl.Name, []apiv1.Container{*tmpl.Container}, tmpl, &createWorkflowPodOpts{executionDeadline: deadline})
 	assert.NoError(t, err)
-	out, err := json.Marshal(map[string]time.Time{"deadline": deadline})
-	if assert.NoError(t, err) {
-		assert.Equal(t, string(out), pod.Annotations[common.AnnotationKeyExecutionControl])
-	}
+	v, err := getPodDeadline(pod)
+	assert.NoError(t, err)
+	assert.Equal(t, v, deadline)
 }
 
 var wfWithPodMetadata = `
@@ -1448,7 +1432,7 @@ spec:
 `
 
 func TestPodMetadata(t *testing.T) {
-	wf := unmarshalWF(wfWithPodMetadata)
+	wf := wfv1.MustUnmarshalWorkflow(wfWithPodMetadata)
 	ctx := context.Background()
 	woc := newWoc(*wf)
 	mainCtr := woc.execWf.Spec.Templates[0].Container
@@ -1456,7 +1440,7 @@ func TestPodMetadata(t *testing.T) {
 	assert.Equal(t, "foo", pod.ObjectMeta.Annotations["workflow-level-pod-annotation"])
 	assert.Equal(t, "bar", pod.ObjectMeta.Labels["workflow-level-pod-label"])
 
-	wf = unmarshalWF(wfWithPodMetadataAndTemplateMetadata)
+	wf = wfv1.MustUnmarshalWorkflow(wfWithPodMetadataAndTemplateMetadata)
 	woc = newWoc(*wf)
 	mainCtr = woc.execWf.Spec.Templates[0].Container
 	pod, _ = woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
@@ -1464,4 +1448,23 @@ func TestPodMetadata(t *testing.T) {
 	assert.Equal(t, "buzz", pod.ObjectMeta.Labels["workflow-level-pod-label"])
 	assert.Equal(t, "hello", pod.ObjectMeta.Annotations["template-level-pod-annotation"])
 	assert.Equal(t, "world", pod.ObjectMeta.Labels["template-level-pod-label"])
+}
+
+func TestGetDeadline(t *testing.T) {
+	wf := wfv1.MustUnmarshalWorkflow(helloWorldWf)
+	ctx := context.Background()
+	woc := newWoc(*wf)
+	mainCtr := woc.execWf.Spec.Templates[0].Container
+	pod, _ := woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{})
+	deadline, _ := getPodDeadline(pod)
+	assert.Equal(t, time.Time{}, deadline)
+
+	executionDeadline := time.Now().Add(5 * time.Minute)
+	wf = wfv1.MustUnmarshalWorkflow(helloWorldWf)
+	ctx = context.Background()
+	woc = newWoc(*wf)
+	mainCtr = woc.execWf.Spec.Templates[0].Container
+	pod, _ = woc.createWorkflowPod(ctx, wf.Name, []apiv1.Container{*mainCtr}, &wf.Spec.Templates[0], &createWorkflowPodOpts{executionDeadline: executionDeadline})
+	deadline, _ = getPodDeadline(pod)
+	assert.Equal(t, executionDeadline.Format(time.RFC3339), deadline.Format(time.RFC3339))
 }

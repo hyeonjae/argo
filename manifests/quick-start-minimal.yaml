@@ -27,6 +27,7 @@ spec:
             type: object
           spec:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
         required:
         - metadata
@@ -63,9 +64,11 @@ spec:
             type: object
           spec:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
           status:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
         required:
         - metadata
@@ -101,6 +104,7 @@ spec:
             type: object
           spec:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
         required:
         - metadata
@@ -146,9 +150,11 @@ spec:
             type: object
           spec:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
           status:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
         required:
         - metadata
@@ -185,6 +191,7 @@ spec:
             type: object
           spec:
             type: object
+            x-kubernetes-map-type: atomic
             x-kubernetes-preserve-unknown-fields: true
         required:
         - metadata
@@ -667,6 +674,7 @@ data:
     enabled: true
     path: /metrics
     port: 9090
+  namespaceParallelism: "10"
 kind: ConfigMap
 metadata:
   name: workflow-controller-configmap
@@ -737,6 +745,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app: workflow-controller
   name: workflow-controller-metrics
 spec:
   ports:
@@ -875,15 +885,18 @@ spec:
               fieldPath: metadata.name
         image: docker.io/argoproj/workflow-controller:latest
         livenessProbe:
+          failureThreshold: 3
           httpGet:
-            path: /metrics
-            port: metrics
-          initialDelaySeconds: 30
-          periodSeconds: 30
+            path: /healthz
+            port: 6060
+          initialDelaySeconds: 90
+          periodSeconds: 60
+          timeoutSeconds: 30
         name: workflow-controller
         ports:
         - containerPort: 9090
           name: metrics
+        - containerPort: 6060
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

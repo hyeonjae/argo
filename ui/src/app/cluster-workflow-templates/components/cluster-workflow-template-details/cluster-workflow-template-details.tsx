@@ -56,7 +56,7 @@ export const ClusterWorkflowTemplateDetails = ({history, location, match}: Route
     useEffect(() => {
         services.info
             .getInfo()
-            .then(info => setNamespace(Utils.getNamespace(info.managedNamespace)))
+            .then(info => setNamespace(Utils.getNamespaceWithDefault(info.managedNamespace)))
             .then(() => setError(null))
             .catch(setError);
     }, []);
@@ -129,8 +129,8 @@ export const ClusterWorkflowTemplateDetails = ({history, location, match}: Route
                         namespace={namespace}
                         name={template.metadata.name}
                         entrypoint={template.spec.entrypoint}
-                        entrypoints={(template.spec.templates || []).map(t => t.name)}
-                        parameters={template.spec.arguments.parameters || []}
+                        templates={template.spec.templates || []}
+                        workflowParameters={template.spec.arguments.parameters || []}
                     />
                 </SlidingPanel>
             )}
